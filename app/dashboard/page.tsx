@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import {
   Mail, MailOpen, PenLine, CalendarClock,
   TrendingUp, TrendingDown, Star, Clock,
-  AlertCircle, Tag, ArrowRight,
+  AlertCircle, Tag, ArrowRight, RefreshCcw,
 } from 'lucide-react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
@@ -55,47 +55,87 @@ const quickActions = [
   },
 ]
 
+function SkeletonStatCard() {
+  return (
+    <div className="rounded-xl border border-border bg-card p-5 shadow-xs animate-pulse">
+      <div className="flex items-center justify-between">
+        <div className="h-10 w-10 rounded-lg bg-muted" />
+        <div className="h-4 w-10 rounded bg-muted" />
+      </div>
+      <div className="mt-4 space-y-2">
+        <div className="h-7 w-14 rounded bg-muted" />
+        <div className="h-3 w-20 rounded bg-muted" />
+      </div>
+    </div>
+  )
+}
+
+function SkeletonEmailRow() {
+  return (
+    <li className="flex items-start gap-3 px-5 py-3.5 animate-pulse">
+      <div className="mt-1 h-8 w-8 shrink-0 rounded-full bg-muted" />
+      <div className="min-w-0 flex-1 space-y-2 py-1">
+        <div className="flex items-center justify-between gap-2">
+          <div className="h-3 w-32 rounded bg-muted" />
+          <div className="h-3 w-14 rounded bg-muted" />
+        </div>
+        <div className="h-3 w-52 rounded bg-muted" />
+      </div>
+    </li>
+  )
+}
+
 export default function DashboardPage() {
   const [emails, setEmails] = useState<Email[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [categorizing, setCategorizing] = useState(false)
 
-  useEffect(() => {
-    fetch('/api/gmail/inbox')
-      .then(res => res.json())
-      .then(data => {
-        setEmails(data.emails || [])
-        setLoading(false)
-      })
-      .catch(() => setLoading(false))
-  }, [])
+  const fetchEmails = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const res = await fetch('/api/gmail/inbox')
+      if (!res.ok) throw new Error(`Status ${res.status}`)
+      const data = await res.json()
+      setEmails(data.emails ?? [])
+    } catch {
+      setError('Could not load your inbox. Check that you are signed in with Gmail access.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { fetchEmails() }, [])
 
   const categorizeEmails = async () => {
     setCategorizing(true)
-    const updated = await Promise.all(
-      emails.map(async (email) => {
-        const res = await fetch('/api/ai/categorize', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            subject: email.subject,
-            from: email.from,
-          }),
+    try {
+      const updated = await Promise.all(
+        emails.map(async (email) => {
+          try {
+            const res = await fetch('/api/ai/categorize', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ subject: email.subject, from: email.from }),
+            })
+            const data = await res.json()
+            return { ...email, category: data.category }
+          } catch {
+            return email
+          }
         })
-        const data = await res.json()
-        return { ...email, category: data.category }
-      })
-    )
-    setEmails(updated)
-    setCategorizing(false)
+      )
+      setEmails(updated)
+    } finally {
+      setCategorizing(false)
+    }
   }
-
-  const unreadCount = emails.length
 
   const stats = [
     {
       label: 'Total Emails',
-      value: emails.length.toString(),
+      value: loading ? '—' : emails.length.toString(),
       delta: 'Live',
       trend: 'up',
       icon: Mail,
@@ -104,7 +144,7 @@ export default function DashboardPage() {
     },
     {
       label: 'Unread',
-      value: unreadCount.toString(),
+      value: loading ? '—' : emails.length.toString(),
       delta: 'Live',
       trend: 'down',
       icon: MailOpen,
@@ -132,8 +172,7 @@ export default function DashboardPage() {
   ]
 
   const today = new Date().toLocaleDateString('en-US', {
-    weekday: 'long', year: 'numeric',
-    month: 'long', day: 'numeric',
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   })
 
   return (
@@ -146,32 +185,38 @@ export default function DashboardPage() {
         </div>
         <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm text-muted-foreground shadow-xs">
           <AlertCircle className="h-4 w-4 text-warning" />
-          <span>{unreadCount} emails in your inbox</span>
+          <span>
+            {loading ? 'Checking inbox…' : `${emails.length} emails in your inbox`}
+          </span>
         </div>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {stats.map(({ label, value, delta, trend, icon: Icon, color, bg }) => (
-          <div key={label} className="rounded-xl border border-border bg-card p-5 shadow-xs">
-            <div className="flex items-center justify-between">
-              <div className={cn('flex h-10 w-10 items-center justify-center rounded-lg', bg)}>
-                <Icon className={cn('h-5 w-5', color)} />
+        {loading
+          ? [...Array(4)].map((_, i) => <SkeletonStatCard key={i} />)
+          : stats.map(({ label, value, delta, trend, icon: Icon, color, bg }) => (
+              <div key={label} className="rounded-xl border border-border bg-card p-5 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <div className={cn('flex h-10 w-10 items-center justify-center rounded-lg', bg)}>
+                    <Icon className={cn('h-5 w-5', color)} />
+                  </div>
+                  <span className={cn(
+                    'flex items-center gap-1 text-xs font-medium',
+                    trend === 'up' ? 'text-success' : 'text-destructive'
+                  )}>
+                    {trend === 'up'
+                      ? <TrendingUp className="h-3 w-3" />
+                      : <TrendingDown className="h-3 w-3" />}
+                    {delta}
+                  </span>
+                </div>
+                <div className="mt-4">
+                  <p className="text-2xl font-bold text-foreground">{value}</p>
+                  <p className="mt-0.5 text-sm text-muted-foreground">{label}</p>
+                </div>
               </div>
-              <span className={cn(
-                'flex items-center gap-1 text-xs font-medium',
-                trend === 'up' ? 'text-success' : 'text-destructive'
-              )}>
-                {trend === 'up' ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                {delta}
-              </span>
-            </div>
-            <div className="mt-4">
-              <p className="text-2xl font-bold text-foreground">{value}</p>
-              <p className="mt-0.5 text-sm text-muted-foreground">{label}</p>
-            </div>
-          </div>
-        ))}
+            ))}
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -183,19 +228,45 @@ export default function DashboardPage() {
                 <Mail className="h-4 w-4 text-primary" />
                 <h2 className="font-semibold text-foreground">Recent Inbox</h2>
               </div>
-              <button
-                onClick={categorizeEmails}
-                disabled={categorizing || emails.length === 0}
-                className="flex items-center gap-1.5 rounded-lg bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 disabled:opacity-50 transition-colors"
-              >
-                <Tag className="h-3 w-3" />
-                {categorizing ? 'Categorizing...' : 'AI Categorize'}
-              </button>
+              <div className="flex items-center gap-2">
+                {!loading && !error && (
+                  <button
+                    onClick={categorizeEmails}
+                    disabled={categorizing || emails.length === 0}
+                    className="flex items-center gap-1.5 rounded-lg bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 disabled:opacity-50 transition-colors"
+                  >
+                    <Tag className="h-3 w-3" />
+                    {categorizing ? 'Categorizing…' : 'AI Categorize'}
+                  </button>
+                )}
+                <button
+                  onClick={fetchEmails}
+                  className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <RefreshCcw className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
 
             {loading ? (
-              <div className="px-5 py-8 text-center text-sm text-muted-foreground">
-                Loading emails...
+              <ul className="divide-y divide-border">
+                {[...Array(5)].map((_, i) => <SkeletonEmailRow key={i} />)}
+              </ul>
+            ) : error ? (
+              <div className="flex flex-col items-center gap-3 px-5 py-10 text-center">
+                <AlertCircle className="h-8 w-8 text-destructive/50" />
+                <p className="text-sm font-medium text-foreground">Failed to load inbox</p>
+                <p className="text-xs text-muted-foreground">{error}</p>
+                <button
+                  onClick={fetchEmails}
+                  className="mt-1 flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                >
+                  <RefreshCcw className="h-3.5 w-3.5" />Try again
+                </button>
+              </div>
+            ) : emails.length === 0 ? (
+              <div className="px-5 py-10 text-center text-sm text-muted-foreground">
+                Your inbox is empty.
               </div>
             ) : (
               <ul className="divide-y divide-border">
@@ -207,21 +278,17 @@ export default function DashboardPage() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-semibold text-foreground truncate">
+                        <span className="truncate text-sm font-semibold text-foreground">
                           {email.from}
                         </span>
-                        <span className="shrink-0 text-[11px] text-muted-foreground">
-                          {email.date}
-                        </span>
+                        <span className="shrink-0 text-[11px] text-muted-foreground">{email.date}</span>
                       </div>
                       <div className="mt-0.5 flex items-center justify-between gap-2">
-                        <p className="truncate text-sm font-medium text-foreground">
-                          {email.subject}
-                        </p>
+                        <p className="truncate text-sm font-medium text-foreground">{email.subject}</p>
                         {email.category && (
                           <span className={cn(
                             'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium',
-                            categoryColors[email.category] || 'text-muted-foreground bg-muted'
+                            categoryColors[email.category] ?? 'text-muted-foreground bg-muted'
                           )}>
                             {email.category}
                           </span>
@@ -235,8 +302,9 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Right Column */}
+        {/* Right column */}
         <div className="flex flex-col gap-4">
+          {/* Quick Actions */}
           <div className="rounded-xl border border-border bg-card shadow-xs">
             <div className="flex items-center gap-2 border-b border-border px-5 py-4">
               <Star className="h-4 w-4 text-primary" />
@@ -259,6 +327,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          {/* Scheduled Sends */}
           <div className="rounded-xl border border-border bg-card shadow-xs">
             <div className="flex items-center gap-2 border-b border-border px-5 py-4">
               <Clock className="h-4 w-4 text-primary" />

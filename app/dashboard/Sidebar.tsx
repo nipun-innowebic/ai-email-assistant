@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { signOut, useSession } from 'next-auth/react'
 import {
+  LayoutDashboard,
   Inbox,
   PenLine,
   CalendarClock,
@@ -17,10 +18,17 @@ import { cn } from '@/lib/utils'
 const navItems = [
   {
     href: '/dashboard',
+    label: 'Dashboard',
+    sublabel: null,
+    icon: LayoutDashboard,
+    exact: true,
+  },
+  {
+    href: '/dashboard/inbox',
     label: 'Inbox',
     sublabel: 'Categorizer',
     icon: Inbox,
-    exact: true,
+    exact: false,
   },
   {
     href: '/dashboard/drafter',

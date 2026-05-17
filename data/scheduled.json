@@ -14,7 +14,7 @@
     "subject": "Test Scheduled Email",
     "body": "This is a test email from AI Email Assistant",
     "scheduledAt": "2026-05-17T21:30",
-    "status": "pending",
+    "status": "sent",
     "createdAt": "2026-05-17T15:58:06.083Z"
   }
 ]
