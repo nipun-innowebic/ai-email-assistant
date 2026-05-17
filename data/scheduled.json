@@ -1,0 +1,20 @@
+[
+  {
+    "id": "bc815eb3-c100-4f4f-b889-94c1e2c4e22f",
+    "to": "nipunanupa66@gmail.com",
+    "subject": "Test Scheduled Email",
+    "body": "This is a test email from AI Email Assistant.",
+    "scheduledAt": "2026-05-17T21:15",
+    "status": "cancelled",
+    "createdAt": "2026-05-17T15:42:02.653Z"
+  },
+  {
+    "id": "f0fc9b85-d1ef-43d3-a9f2-357d0b50c193",
+    "to": "nipunanupa66@gmail.com",
+    "subject": "Test Scheduled Email",
+    "body": "This is a test email from AI Email Assistant",
+    "scheduledAt": "2026-05-17T21:30",
+    "status": "pending",
+    "createdAt": "2026-05-17T15:58:06.083Z"
+  }
+]
