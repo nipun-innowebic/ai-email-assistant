@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
-import { join } from 'path'
-import { randomUUID } from 'crypto'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/authOptions'
+import { supabase } from '@/lib/supabaseClient'
 
 export interface ScheduledEmail {
   id: string
@@ -13,32 +13,45 @@ export interface ScheduledEmail {
   createdAt: string
 }
 
-const DATA_DIR = join(process.cwd(), 'data')
-const DATA_FILE = join(DATA_DIR, 'scheduled.json')
-
-function readScheduled(): ScheduledEmail[] {
-  if (!existsSync(DATA_FILE)) return []
-  try {
-    return JSON.parse(readFileSync(DATA_FILE, 'utf-8')) as ScheduledEmail[]
-  } catch {
-    return []
+function toScheduledEmail(row: Record<string, unknown>): ScheduledEmail {
+  return {
+    id: row.id as string,
+    to: row.to_email as string,
+    subject: row.subject as string,
+    body: row.body as string,
+    scheduledAt: row.scheduled_at as string,
+    status: row.status as ScheduledEmail['status'],
+    createdAt: row.created_at as string,
   }
-}
-
-function writeScheduled(emails: ScheduledEmail[]): void {
-  if (!existsSync(DATA_DIR)) {
-    mkdirSync(DATA_DIR, { recursive: true })
-  }
-  writeFileSync(DATA_FILE, JSON.stringify(emails, null, 2), 'utf-8')
 }
 
 export async function GET() {
-  const emails = readScheduled()
-  return NextResponse.json({ emails })
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  }
+
+  const { data, error } = await supabase
+    .from('scheduled_emails')
+    .select('*')
+    .eq('user_email', session.user.email)
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    console.error('Scheduler GET error:', error)
+    return NextResponse.json({ error: 'Failed to fetch scheduled emails' }, { status: 500 })
+  }
+
+  return NextResponse.json({ emails: (data ?? []).map(toScheduledEmail) })
 }
 
 export async function POST(req: Request) {
   try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+    }
+
     const { to, subject, body, scheduledAt } = await req.json()
 
     if (!to || !subject || !body || !scheduledAt) {
@@ -48,21 +61,25 @@ export async function POST(req: Request) {
       )
     }
 
-    const newEmail: ScheduledEmail = {
-      id: randomUUID(),
-      to,
-      subject,
-      body,
-      scheduledAt,
-      status: 'pending',
-      createdAt: new Date().toISOString(),
+    const { data, error } = await supabase
+      .from('scheduled_emails')
+      .insert({
+        user_email: session.user.email,
+        to_email: to,
+        subject,
+        body,
+        scheduled_at: scheduledAt,
+        status: 'pending',
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Scheduler POST error:', error)
+      return NextResponse.json({ error: 'Failed to schedule email' }, { status: 500 })
     }
 
-    const emails = readScheduled()
-    emails.push(newEmail)
-    writeScheduled(emails)
-
-    return NextResponse.json({ email: newEmail }, { status: 201 })
+    return NextResponse.json({ email: toScheduledEmail(data) }, { status: 201 })
   } catch (error) {
     console.error('Scheduler POST error:', error)
     return NextResponse.json({ error: 'Failed to schedule email' }, { status: 500 })
@@ -71,23 +88,31 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+    }
+
     const { id, status } = await req.json()
 
     if (!id || !status) {
       return NextResponse.json({ error: 'Missing id or status' }, { status: 400 })
     }
 
-    const emails = readScheduled()
-    const idx = emails.findIndex((e) => e.id === id)
+    const { data, error } = await supabase
+      .from('scheduled_emails')
+      .update({ status })
+      .eq('id', id)
+      .eq('user_email', session.user.email)
+      .select()
+      .single()
 
-    if (idx === -1) {
-      return NextResponse.json({ error: 'Email not found' }, { status: 404 })
+    if (error) {
+      console.error('Scheduler PATCH error:', error)
+      return NextResponse.json({ error: 'Failed to update email' }, { status: 500 })
     }
 
-    emails[idx].status = status as ScheduledEmail['status']
-    writeScheduled(emails)
-
-    return NextResponse.json({ email: emails[idx] })
+    return NextResponse.json({ email: toScheduledEmail(data) })
   } catch (error) {
     console.error('Scheduler PATCH error:', error)
     return NextResponse.json({ error: 'Failed to update email' }, { status: 500 })
