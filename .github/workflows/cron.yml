@@ -1,0 +1,15 @@
+name: Email Scheduler Cron
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+
+jobs:
+  trigger-cron:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger email scheduler
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            https://ai-email-assistant-ebon.vercel.app/api/scheduler/cron
