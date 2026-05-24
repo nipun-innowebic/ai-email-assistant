@@ -86,6 +86,41 @@ export async function POST(req: Request) {
   }
 }
 
+export async function DELETE(req: Request) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+    }
+
+    const { id } = await req.json()
+
+    if (!id) {
+      return NextResponse.json({ error: 'Missing id' }, { status: 400 })
+    }
+
+    const { error, count } = await supabaseAdmin
+      .from('scheduled_emails')
+      .delete({ count: 'exact' })
+      .eq('id', id)
+      .eq('user_id', session.user.email)
+      .in('status', ['pending', 'approved'])
+
+    if (error) {
+      console.error('Scheduler DELETE error:', error)
+      return NextResponse.json({ error: 'Failed to delete email' }, { status: 500 })
+    }
+    if (count === 0) {
+      return NextResponse.json({ error: 'Email not found or already sent' }, { status: 404 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Scheduler DELETE error:', error)
+    return NextResponse.json({ error: 'Failed to delete email' }, { status: 500 })
+  }
+}
+
 export async function PATCH(req: Request) {
   try {
     const session = await getServerSession(authOptions)

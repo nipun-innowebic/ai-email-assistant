@@ -13,14 +13,14 @@ interface ScheduledEmail {
   subject: string
   body: string
   scheduledAt: string
-  status: 'pending' | 'sent' | 'cancelled' | 'failed'
+  status: 'pending' | 'approved' | 'sent' | 'failed'
   createdAt: string
 }
 
 const STATUS_CONFIG = {
   pending: { label: 'Pending', className: 'text-warning bg-warning/10', icon: Clock },
+  approved: { label: 'Approved', className: 'text-primary bg-primary/10', icon: CheckCircle },
   sent: { label: 'Sent', className: 'text-success bg-success/10', icon: CheckCircle },
-  cancelled: { label: 'Cancelled', className: 'text-muted-foreground bg-muted', icon: XCircle },
   failed: { label: 'Failed', className: 'text-destructive bg-destructive/10', icon: AlertCircle },
 } as const
 
@@ -79,16 +79,11 @@ export default function SchedulerPage() {
     sessionStorage.removeItem('scheduler_prefill')
   }, [])
 
-  // Single effect: run cron check → refresh list; repeat every 30 s
+  // Poll the scheduled list every 30 s so status updates (sent/failed) surface automatically.
   useEffect(() => {
     let mounted = true
 
     const tick = async () => {
-      try {
-        await fetch('/api/scheduler/cron')
-      } catch {
-        // cron failure is non-fatal; still refresh the list
-      }
       if (mounted) await fetchScheduled()
     }
 
@@ -143,9 +138,9 @@ export default function SchedulerPage() {
     setCancelling(id)
     try {
       await fetch('/api/scheduler', {
-        method: 'PATCH',
+        method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, status: 'cancelled' }),
+        body: JSON.stringify({ id }),
       })
       await fetchScheduled()
     } catch {
@@ -155,7 +150,7 @@ export default function SchedulerPage() {
     }
   }
 
-  const pendingCount = scheduled.filter((e) => e.status === 'pending').length
+  const pendingCount = scheduled.filter((e) => e.status === 'pending' || e.status === 'approved').length
 
   return (
     <div className="flex flex-col gap-6 p-8 max-w-3xl">
@@ -307,7 +302,7 @@ export default function SchedulerPage() {
                       <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
                         <Clock className="h-3 w-3" />{formatDateTime(email.scheduledAt)}
                       </div>
-                      {email.status === 'pending' && (
+                      {(email.status === 'pending' || email.status === 'approved') && (
                         <button
                           onClick={() => handleCancel(email.id)}
                           disabled={isCancelling}
