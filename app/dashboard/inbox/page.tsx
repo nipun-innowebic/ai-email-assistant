@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation'
 import {
   Mail, Tag, RefreshCcw, ArrowLeft, Send,
   CalendarClock, Sparkles, AlertCircle, Loader2,
-  User, Clock,
+  User, Clock, ClipboardCheck,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import ApprovalCard from '@/components/ApprovalCard'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -26,6 +27,17 @@ interface FullEmail {
   date: string
   body: string
   bodyType: 'plain' | 'html'
+}
+
+interface PendingEmail {
+  id: string
+  subject: string
+  body: string
+  to_email: string
+  original_email_id: string | null
+  created_at: string
+  originalFrom: string
+  originalBody: string
 }
 
 // ── Category colours (matches dashboard/page.tsx) ──────────────────────────
@@ -103,6 +115,54 @@ export default function InboxPage() {
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
   const [sendSuccess, setSendSuccess] = useState(false)
+
+  // Pending approval state
+  const [pendingEmails, setPendingEmails] = useState<PendingEmail[]>([])
+  const [loadingPending, setLoadingPending] = useState(true)
+
+  // ── Fetch pending approvals ───────────────────────────────────────────────
+
+  const fetchPending = useCallback(async () => {
+    setLoadingPending(true)
+    try {
+      const res = await fetch('/api/scheduler/pending')
+      if (!res.ok) return
+      const data = await res.json()
+      const raw: Array<{
+        id: string
+        subject: string
+        body: string
+        to_email: string
+        original_email_id: string | null
+        created_at: string
+      }> = data.emails ?? []
+
+      // Enrich each record with the original email's from + body from Gmail.
+      // Falls back gracefully if original_email_id is absent or the fetch fails.
+      const enriched: PendingEmail[] = await Promise.all(
+        raw.map(async (email) => {
+          let originalFrom = email.to_email
+          let originalBody = ''
+          if (email.original_email_id) {
+            try {
+              const msgRes = await fetch(`/api/gmail/message/${email.original_email_id}`)
+              if (msgRes.ok) {
+                const msg: FullEmail = await msgRes.json()
+                originalFrom = msg.from
+                originalBody = msg.body
+              }
+            } catch { /* keep defaults */ }
+          }
+          return { ...email, originalFrom, originalBody }
+        })
+      )
+      setPendingEmails(enriched)
+    } catch { /* don't disrupt the main inbox */ } finally {
+      setLoadingPending(false)
+    }
+  }, [])
+
+  useEffect(() => { fetchPending() }, [fetchPending])
 
   // ── Fetch email list ──────────────────────────────────────────────────────
 
@@ -257,7 +317,61 @@ export default function InboxPage() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex flex-col h-full overflow-hidden">
+
+      {/* ── PENDING APPROVAL SECTION ── */}
+      {(loadingPending || pendingEmails.length > 0) && (
+        <div className="shrink-0 border-b border-border bg-muted/20">
+          <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border">
+            <ClipboardCheck className="h-4 w-4 text-warning" />
+            <span className="text-sm font-semibold text-foreground">Pending Approval</span>
+            {!loadingPending && (
+              <span className="rounded-full bg-warning/10 px-2 py-0.5 text-[11px] font-semibold text-warning">
+                {pendingEmails.length}
+              </span>
+            )}
+          </div>
+
+          <div className="overflow-y-auto max-h-[45vh] p-4 space-y-4">
+            {loadingPending ? (
+              <div className="rounded-xl border border-border bg-card shadow-xs overflow-hidden animate-pulse">
+                <div className="flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-border">
+                  <div className="flex-1 p-5 space-y-3">
+                    <div className="h-3 w-32 rounded bg-muted" />
+                    <div className="h-3 w-48 rounded bg-muted" />
+                    <div className="h-24 rounded-lg bg-muted" />
+                  </div>
+                  <div className="flex-1 p-5">
+                    <div className="h-32 rounded-lg bg-muted" />
+                  </div>
+                </div>
+                <div className="border-t border-border px-5 py-3 flex justify-end gap-2">
+                  <div className="h-8 w-24 rounded-lg bg-muted" />
+                  <div className="h-8 w-24 rounded-lg bg-muted" />
+                </div>
+              </div>
+            ) : (
+              pendingEmails.map((email) => (
+                <ApprovalCard
+                  key={email.id}
+                  id={email.id}
+                  originalEmail={{
+                    from: email.originalFrom,
+                    subject: email.subject,
+                    body: email.originalBody,
+                  }}
+                  draft={email.body}
+                  onApprove={() => fetchPending()}
+                  onReject={() => fetchPending()}
+                />
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── INBOX SPLIT ── */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
       {/* ── LEFT PANEL ── */}
       <div className={cn(
         'flex flex-col border-r border-border bg-sidebar',
@@ -520,6 +634,7 @@ export default function InboxPage() {
           </div>
         )}
       </div>
+      </div>{/* end inbox split */}
     </div>
   )
 }
