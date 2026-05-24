@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/authOptions'
-import { supabase } from '@/lib/supabaseClient'
+import { supabaseAdmin } from '@/lib/supabaseAdmin'
 
 export interface ScheduledEmail {
   id: string
@@ -9,7 +9,7 @@ export interface ScheduledEmail {
   subject: string
   body: string
   scheduledAt: string
-  status: 'pending' | 'sent' | 'cancelled' | 'failed'
+  status: 'pending' | 'approved' | 'sent' | 'failed'
   createdAt: string
 }
 
@@ -31,10 +31,10 @@ export async function GET() {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('scheduled_emails')
     .select('*')
-    .eq('user_email', session.user.email)
+    .eq('user_id', session.user.email)
     .order('created_at', { ascending: true })
 
   if (error) {
@@ -61,10 +61,10 @@ export async function POST(req: Request) {
       )
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('scheduled_emails')
       .insert({
-        user_email: session.user.email,
+        user_id: session.user.email,
         to_email: to,
         subject,
         body,
@@ -99,11 +99,11 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: 'Missing id or status' }, { status: 400 })
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('scheduled_emails')
       .update({ status })
       .eq('id', id)
-      .eq('user_email', session.user.email)
+      .eq('user_id', session.user.email)
       .select()
       .single()
 
